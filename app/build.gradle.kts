@@ -1,3 +1,5 @@
+import io.quarkus.gradle.tasks.QuarkusApplicationModelTask
+
 plugins {
     java
     id("io.quarkus")
@@ -39,4 +41,22 @@ java {
 tasks.withType<JavaCompile> {
     options.encoding = "UTF-8"
     options.compilerArgs.add("-parameters")
+}
+
+// Opt-in workaround (`-PsortModel`) demonstrating the fix: sort the "local-projects"
+// array in the serialized model after the model tasks run, making the output
+// deterministic across JVMs. Off by default so the bug reproduces out of the box.
+if (project.hasProperty("sortModel")) {
+    tasks.withType<QuarkusApplicationModelTask>().configureEach {
+        doLast {
+            val f = applicationModel.get().asFile
+            if (!f.exists()) return@doLast
+            val text = f.readText()
+            val sorted = Regex("\"local-projects\":\\[([^\\]]*)\\]").replace(text) { m ->
+                val entries = m.groupValues[1].split(',').filter { it.isNotBlank() }.sorted()
+                "\"local-projects\":[${entries.joinToString(",")}]"
+            }
+            if (sorted != text) f.writeText(sorted)
+        }
+    }
 }
