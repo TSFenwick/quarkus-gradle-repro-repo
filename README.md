@@ -7,13 +7,21 @@ therefore poisons the Gradle build cache.
 
 ## How this repo is organised
 
-`main` holds only the **reusable scaffold** — the Gradle wrapper, plugin
-management, and Quarkus version pins. It has no modules and reproduces nothing on
-its own.
+`main` is a minimal but **buildable multi-module Quarkus monorepo** — a `:app`
+module that depends on a `:lib-core` (main scope) and a `:lib-testing` (test scope)
+library. It builds with `./gradlew build` and reproduces nothing specific on its
+own; it is the reusable base that every reproduction shares.
 
-**Each reproduction lives on its own branch**, branched off `main`, and adds only
-the modules and scripts that reproduction needs. To run one, check out its branch
-and follow that branch's `README.md`.
+**Each reproduction lives on its own branch**, branched off `main`, and layers on
+the tooling and docs that reproduction needs (a `repro.sh`, extra Gradle config, a
+bug-specific `README.md`). To run one, check out its branch and follow that
+branch's `README.md`.
+
+```
+app/          Quarkus application module (depends on :lib-core and :lib-testing)
+lib-core/     main-scope library
+lib-testing/  test-scope library
+```
 
 ## Reproductions
 

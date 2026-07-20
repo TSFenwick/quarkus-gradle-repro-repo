@@ -11,5 +11,4 @@ pluginManagement {
 }
 rootProject.name = "quarkus-repros"
 
-// Each reproduction lives on its own branch and wires in its own modules here.
-// See README.md for the branch index.
+include(":app", ":lib-core", ":lib-testing")
