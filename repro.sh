@@ -11,8 +11,8 @@
 #   ./repro.sh [N] [extra gradle args...]
 #     N   number of fresh-JVM runs (default 8)
 #
-#   ./repro.sh 8               # reproduce the bug -> expect multiple orderings
-#   ./repro.sh 8 -PsortModel   # apply the fix     -> expect a single ordering
+#   ./repro.sh 8               # reproduce the bug, expect multiple orderings
+#   ./repro.sh 8 -PsortModel   # apply the stopgap sort, expect a single ordering
 set -euo pipefail
 
 cd "$(dirname "$0")"
@@ -48,7 +48,7 @@ if [[ "$distinct" -gt 1 ]]; then
   exit 0
 else
   echo "DETERMINISTIC: 1 ordering across $N fresh JVMs"
-  echo "  - with -PsortModel this is the expected fixed behaviour."
-  echo "  - without it, this is just luck (each fresh JVM is a coin flip) — run again."
+  echo "  - with -PsortModel, the stopgap sort made it deterministic (expected)."
+  echo "  - without it, this run was luck. Each fresh JVM randomizes the order, so run again."
   exit 1
 fi

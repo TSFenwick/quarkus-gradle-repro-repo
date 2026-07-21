@@ -43,9 +43,14 @@ tasks.withType<JavaCompile> {
     options.compilerArgs.add("-parameters")
 }
 
-// Opt-in workaround (`-PsortModel`) demonstrating the fix: sort the "local-projects"
-// array in the serialized model after the model tasks run, making the output
-// deterministic across JVMs. Off by default so the bug reproduces out of the box.
+// Opt-in stopgap (`-PsortModel`) that sorts the "local-projects" array in the
+// serialized model after the model tasks run, making the output deterministic across
+// JVMs. Off by default so the bug reproduces out of the box.
+//
+// This is a demonstration, not a viable fix. The doLast rewrites the model task's own
+// declared output, which breaks Gradle parallel execution (org.gradle.parallel). The
+// real fix belongs in the serializer, where the set-valued fields would be written in
+// a stable order.
 if (project.hasProperty("sortModel")) {
     tasks.withType<QuarkusApplicationModelTask>().configureEach {
         doLast {

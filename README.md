@@ -32,7 +32,7 @@ for the order to vary. Requires JDK 25. The wrapper pins Gradle 9.6.1 and
 
 ```bash
 ./repro.sh 8              # fresh JVM per run, expect "NONDETERMINISTIC: N orderings"
-./repro.sh 8 -PsortModel  # the fix, expect one ordering and one hash
+./repro.sh 8 -PsortModel  # the stopgap sort, expect one ordering and one hash
 ```
 
 Manual equivalent:
@@ -47,11 +47,15 @@ cmp /tmp/a.dat app/build/quarkus/application-model/quarkus-app-test-model.dat
 
 ## Fix
 
-`-PsortModel` (see [`app/build.gradle.kts`](app/build.gradle.kts)) sorts the
-`local-projects` array in a `doLast` on [`QuarkusApplicationModelTask`][4]. That is a
-workaround. The upstream fix is to serialize set-valued fields in a stable order,
-either sorting before writing or storing them in an ordered collection, in
-`ApplicationModel.asMap`.
+The repro ships an opt-in `-PsortModel` (see
+[`app/build.gradle.kts`](app/build.gradle.kts)) that sorts the `local-projects` array
+in a `doLast` on [`QuarkusApplicationModelTask`][4]. It makes the bytes deterministic,
+but it is a stopgap, not a real fix. The `doLast` rewrites the model task's own
+declared output, which breaks Gradle parallel execution (`org.gradle.parallel`).
+
+The real fix belongs in the serializer. Write the set-valued fields in a stable order
+in `ApplicationModel.asMap`, either sorting before writing or storing them in an
+ordered collection. That avoids the parallel-execution problem entirely.
 
 <!-- Quarkus 3.36.3 source -->
 [1]: https://github.com/quarkusio/quarkus/blob/3.36.3/independent-projects/bootstrap/app-model/src/main/java/io/quarkus/bootstrap/model/DefaultApplicationModel.java#L34
