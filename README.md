@@ -45,6 +45,30 @@ cp app/build/quarkus/application-model/quarkus-app-test-model.dat /tmp/a.dat
 cmp /tmp/a.dat app/build/quarkus/application-model/quarkus-app-test-model.dat
 ```
 
+## Cache key
+
+`repro.sh` shows the model bytes flipping. `cache-key.sh` shows what that does to the
+build cache. It runs a cacheable model consumer, `quarkusGenerateCodeTests` (which
+takes the test model as an `applicationModel` input), across fresh JVMs and prints the
+build cache key Gradle computes for the task each run.
+
+```bash
+./cache-key.sh 6              # expect the key to flip with the model order
+./cache-key.sh 6 -PsortModel  # the stopgap sort, expect one stable key
+```
+
+Without the sort the key tracks the ordering, so the same task gets several keys
+across JVMs. Any build whose key differs from the stored one misses the cache.
+
+```
+run 2: cacheKey=a6718fd0... "local-projects":["org.example:app::jar","org.example:lib-core::jar","org.example:lib-testing::jar"]
+run 3: cacheKey=3a7b355c... "local-projects":["org.example:app::jar","org.example:lib-testing::jar","org.example:lib-core::jar"]
+CACHE KEY UNSTABLE: 4 distinct keys for :app:quarkusGenerateCodeTests across 5 fresh JVMs
+```
+
+With `-PsortModel` every run produces the same order and the same key, so the task
+stays cacheable across JVMs.
+
 ## Fix
 
 The repro ships an opt-in `-PsortModel` (see
