@@ -15,14 +15,14 @@ tasks that create the directories it probes. The serialized application model is
 therefore a function of which Gradle invocation produced it, not only of the build's
 inputs.
 
-Because `build/quarkus/application-model/*.dat` is the `applicationModel` `@InputFile`
-of `quarkusGenerateCode`, `quarkusGenerateCodeTests`, `quarkusAppPartsBuild` and
-`quarkusBuild`, and a content-hashed input of every `Test` task, the build-cache key of
-all of those tasks moves with it.
+`quarkus-app-model.dat` is the `applicationModel` `@InputFile` of `quarkusGenerateCode`,
+and `quarkus-app-test-model.dat` is that of `quarkusGenerateCodeTests` as well as a
+content-hashed input of every `Test` task, so the build-cache key of all of those tasks
+moves with it.
 
-On a two-module project, three realistic invocations produce three different models —
-and three different cache keys — from identical sources, identical versions and a
-single JVM:
+On a three-module project (`:app`, plus a main-scope and a test-scope library), three
+realistic invocations produce three different models — and three different cache keys —
+from identical sources, identical versions and a single JVM:
 
 | Tree | Invocation | app artifact `resolved-paths` |
 | --- | --- | --- |
@@ -62,9 +62,14 @@ declares `dependsOn(classes)`. It is correspondingly stable.
 [`quarkusGenerateTestAppModel`](https://github.com/quarkusio/quarkus/blob/3.36.3/devtools/gradle/gradle-application-plugin/src/main/java/io/quarkus/gradle/QuarkusPlugin.java#L208-L214)
 and
 [`quarkusGenerateDevAppModel`](https://github.com/quarkusio/quarkus/blob/3.36.3/devtools/gradle/gradle-application-plugin/src/main/java/io/quarkus/gradle/QuarkusPlugin.java#L215-L220)
-do not, and cannot: `compileJava`
+do not. The main model cannot: `compileJava`
 [depends on `quarkusGenerateCode`](https://github.com/quarkusio/quarkus/blob/3.36.3/devtools/gradle/gradle-application-plugin/src/main/java/io/quarkus/gradle/QuarkusPlugin.java#L504),
-so adding the edge would create a cycle.
+which consumes `quarkusGenerateAppModel`, so the edge closes a cycle. Nor can the dev
+model, once `quarkusDev` is in the graph, via
+`compileJava.mustRunAfter(quarkusGenerateCodeDev)`. The test model is the exception —
+`dependsOn(classes)` is acyclic there (checked with `--dry-run` on `:app:test` and
+`:app:build`) — so an edge would fix that model, but not the one `quarkusGenerateCode`
+reads.
 
 Two further properties make this worse than a one-off:
 
@@ -121,8 +126,10 @@ B vs C:  < applicationModel=2201c295f049aa1bfaa1500415d98eac
 Diffing the full pretty-printed models confirms `resolved-paths` is the only field that
 moves anywhere in the file.
 
-Affected tasks: `quarkusGenerateCode`, `quarkusGenerateCodeTests`,
-`quarkusAppPartsBuild`, `quarkusBuild`, and every `Test` task in a Quarkus module.
+Affected tasks: `quarkusGenerateCode` and `imageCheckRequirements` (main model),
+`quarkusGenerateCodeTests` and every `Test` task in a Quarkus module (test model).
+`quarkusAppPartsBuild`, `quarkusBuild` and the other `QuarkusBuildTask`s are wired to
+`quarkusBuildAppModel` and so are not affected.
 
 Practical impact:
 
@@ -137,18 +144,17 @@ Practical impact:
 Scope: only the artifact for the module the model is built for is affected; other local
 projects resolve to their built jar. Only main sources are affected —
 `getProjectArtifact` reads `getMainSources()` only, so `build/classes/java/test` never
-appears, not even in the test model. The main and test models are both exposed; the
-build model is not.
+appears, not even in the test model.
 
-Not a scheduling race, as far as I could measure: four graph shapes × 8 runs under
-`--parallel`, `--parallel --max-workers=2` and a sequential control each produced
-exactly one value on Gradle 9.6.1. Gradle does not run tasks of the same project
-concurrently. The unordered `processResources` / `quarkusGenerateAppModel` pair is
-still a latent hazard, since nothing in the build contract fixes their order.
+Not a scheduling race, as far as I could measure: four graph shapes × 8 runs — three under
+parallel execution (`--parallel`, and `--parallel --max-workers=2`) and a sequential
+control — each produced exactly one value on Gradle 9.6.1. Gradle does not run tasks of the
+same project concurrently. The unordered `processResources` / `quarkusGenerateAppModel`
+pair is still a latent hazard, since nothing in the build contract fixes their order.
 
 ### How to Reproduce
 
-Minimal two-module reproduction with a scripted harness:
+Minimal three-module reproduction with a scripted harness:
 https://github.com/TSFenwick/quarkus-gradle-repro-repo/tree/resolved-paths-existence
 
 ```bash
@@ -189,9 +195,9 @@ low-risk:
   nonexistent output directories.
 - [`SourceDir.isOutputAvailable()`](https://github.com/quarkusio/quarkus/blob/3.36.3/independent-projects/bootstrap/app-model/src/main/java/io/quarkus/bootstrap/workspace/SourceDir.java#L26-L29)
   already performs exactly this `Files.exists(outputDir)` check against the
-  deserialized model, and
+  deserialized model; `ArtifactSources.isOutputAvailable()` aggregates it, and
   [`WorkspaceModule.getContentTree`](https://github.com/quarkusio/quarkus/blob/3.36.3/independent-projects/bootstrap/app-model/src/main/java/io/quarkus/bootstrap/workspace/WorkspaceModule.java#L53-L57)
-  uses it to fall back to `EmptyPathTree`.
+  uses that to fall back to `EmptyPathTree`.
 
 Concretely:
 
@@ -206,16 +212,16 @@ Step 2 touches shared bootstrap code used by the Maven integration as well, so i
 maintainer input on the right choke point. Step 1 alone is not viable — it fails as
 shown above.
 
-A narrower alternative that is **not** sufficient: `quarkusGenerateAppModel` could
-declare `dependsOn(processResources)` without creating a cycle, pinning
-`build/resources/main`. `build/classes/java/main` would still vary between clean and
-warm trees.
+Narrower alternatives that are **not** sufficient: `quarkusGenerateAppModel` could declare
+`dependsOn(processResources)` without creating a cycle, pinning `build/resources/main`, and
+`quarkusGenerateTestAppModel` could declare `dependsOn(classes)`. `build/classes/java/main`
+would still vary between clean and warm trees in the main model.
 
 ### Environment
 
 - Quarkus 3.36.3 (Gradle plugin `io.quarkus`)
 - Gradle 9.6.1
-- JDK 25 (Temurin), macOS 15 / darwin arm64
+- JDK 25 (Zulu 25.0.2), macOS 26.5 / darwin arm64
 - Build cache enabled; reproduced with a project-local cache directory
 
 ### Relates to

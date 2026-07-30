@@ -156,8 +156,10 @@ echo
 if [[ "$distinct" -gt 1 ]]; then
   echo "CACHE KEY UNSTABLE: $TASK gets $distinct different keys with identical sources,"
   echo "identical versions and one JVM. Any build whose key differs from the stored one"
-  echo "misses the cache, and every other model consumer (quarkusGenerateCodeTests,"
-  echo "quarkusAppPartsBuild, quarkusBuild, and every Test task) is keyed the same way."
+  echo "misses the cache, and the other consumers of an unstable model are keyed the same"
+  echo "way: quarkusGenerateCodeTests and every Test task read quarkus-app-test-model.dat,"
+  echo "imageCheckRequirements reads the main model. quarkusAppPartsBuild and quarkusBuild"
+  echo "are wired to quarkusBuildAppModel instead, which is stable (see README.md)."
   exit 0
 else
   echo "CACHE KEY STABLE: 1 key across all scenarios. Unexpected on 3.36.3."
